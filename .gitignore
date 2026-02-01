@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Large model files (too big for GitHub)
+models/content_similarity_matrix.npy
+models/hybrid_recommender.pkl
+models/knn_item_model.pkl
+
+# Environments
+.env
+.venv
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Jupyter
+.ipynb_checkpoints/
+models/*.pkl
