@@ -43,6 +43,9 @@ frontend/   → UI (Next.js)
 models/     → Trained ML models
 data/       → Dataset
 notebooks/  → ML experiments
+
+
+
 ▶️ Run Locally
 Backend
 cd api
@@ -52,6 +55,9 @@ Frontend
 cd frontend
 npm install
 npm run dev
+
+
+
 🌐 API Example
 GET /recommendations/{user_id}
 GET /similar/{movie_id}
