@@ -7,6 +7,7 @@ for the movie recommendation system.
 
 import pickle
 import pandas as pd
+import os
 from pathlib import Path
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Path as PathParam
@@ -40,6 +41,35 @@ from recommender import (
 models = {}
 ratings = None
 movies = None
+
+
+def get_allowed_origins() -> List[str]:
+    """
+    Build the CORS allowlist from environment variables.
+
+    Supported variables:
+    - CORS_ALLOWED_ORIGINS: comma-separated list of allowed origins
+    - FRONTEND_URL: single frontend origin for deployed environments
+    """
+    configured_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    frontend_url = os.getenv("FRONTEND_URL", "")
+
+    origins = [
+        origin.strip()
+        for origin in configured_origins.split(",")
+        if origin.strip()
+    ]
+
+    if frontend_url.strip():
+        origins.append(frontend_url.strip())
+
+    if origins:
+        return list(dict.fromkeys(origins))
+
+    return [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
 
 @asynccontextmanager
@@ -169,7 +199,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

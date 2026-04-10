@@ -56,6 +56,15 @@ cd frontend
 npm install
 npm run dev
 
+Deployment note
+Set `FRONTEND_URL` on the FastAPI backend to your deployed frontend origin.
+
+Example:
+`FRONTEND_URL=https://your-frontend-domain.com`
+
+For multiple allowed origins, use:
+`CORS_ALLOWED_ORIGINS=https://your-frontend-domain.com,https://staging-your-frontend-domain.com`
+
 
 
 🌐 API Example
