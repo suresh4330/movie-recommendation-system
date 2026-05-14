@@ -5,7 +5,7 @@ This module defines the data models used for request/response validation
 and serialization in the FastAPI application.
 """
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -88,4 +88,5 @@ class APIInfo(BaseModel):
     version: str
     status: str
     models_loaded: bool
+    available_algorithms: List[str]
     description: str

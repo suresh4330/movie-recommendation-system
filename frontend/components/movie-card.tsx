@@ -1,5 +1,6 @@
 import { Star } from 'lucide-react'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
+import { motion } from 'framer-motion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatGenres, formatRating } from '@/lib/utils'
@@ -16,7 +17,14 @@ export default function MovieCard({ movie, rank, onViewDetails }: MovieCardProps
   const isPrediction = 'predicted_rating' in movie
 
   return (
-    <Card className="flex flex-col h-full hover:shadow-lg transition-shadow">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3 }}
+      whileHover={{ scale: 1.05 }}
+      className="h-full"
+    >
+      <Card className="flex flex-col h-full hover:shadow-2xl transition-all duration-300 bg-white/5 backdrop-blur-lg border-white/10 text-white overflow-hidden hover:border-white/20">
       <CardContent className="flex-1 p-6">
         {/* Rank Badge */}
         {rank && (
@@ -68,5 +76,6 @@ export default function MovieCard({ movie, rank, onViewDetails }: MovieCardProps
         </CardFooter>
       )}
     </Card>
+    </motion.div>
   )
 }

@@ -1,4 +1,5 @@
 'use client'
+import { motion } from 'framer-motion'
 
 import { useState } from 'react'
 import { Sparkles, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
@@ -67,7 +68,12 @@ export default function HomePage() {
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="text-center mb-8">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="text-center mb-8"
+      >
         <h1 className="text-4xl font-bold mb-2 flex items-center justify-center space-x-2">
           <Sparkles className="h-8 w-8" />
           <span>Get Personalized Recommendations</span>
@@ -75,10 +81,15 @@ export default function HomePage() {
         <p className="text-muted-foreground">
           Choose your preferred algorithm and discover movies you&apos;ll love
         </p>
-      </div>
+      </motion.div>
 
       {/* Recommendation Form */}
-      <Card className="mb-8 max-w-3xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+      <Card className="mb-8 max-w-3xl mx-auto bg-white/5 backdrop-blur-lg border-white/10 text-white">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <TrendingUp className="h-5 w-5" />
@@ -156,6 +167,7 @@ export default function HomePage() {
           </Button>
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Error Alert */}
       {error && (
@@ -176,7 +188,11 @@ export default function HomePage() {
 
       {/* Results */}
       {!loading && recommendations.length > 0 && (
-        <>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
           <div className="mb-6 text-center">
             <h2 className="text-2xl font-bold">
               🎯 Top {recommendations.length} Recommendations for You
@@ -196,7 +212,7 @@ export default function HomePage() {
               />
             ))}
           </div>
-        </>
+        </motion.div>
       )}
 
       {/* Empty State */}

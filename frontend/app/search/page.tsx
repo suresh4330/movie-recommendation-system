@@ -1,4 +1,5 @@
 'use client'
+import { motion } from 'framer-motion'
 
 import { useState, useEffect } from 'react'
 import { Search as SearchIcon, Film, Loader2, AlertCircle } from 'lucide-react'
@@ -102,7 +103,12 @@ export default function SearchPage() {
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="text-center mb-8">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="text-center mb-8"
+      >
         <h1 className="text-4xl font-bold mb-2 flex items-center justify-center space-x-2">
           <SearchIcon className="h-8 w-8" />
           <span>Browse Movies</span>
@@ -110,10 +116,15 @@ export default function SearchPage() {
         <p className="text-muted-foreground">
           Search and filter through our movie catalog
         </p>
-      </div>
+      </motion.div>
 
       {/* Search & Filters */}
-      <Card className="mb-8 max-w-4xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+      <Card className="mb-8 max-w-4xl mx-auto bg-white/5 backdrop-blur-lg border-white/10 text-white">
         <CardHeader>
           <CardTitle>Search & Filter</CardTitle>
         </CardHeader>
@@ -172,6 +183,7 @@ export default function SearchPage() {
           </div>
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Error Alert */}
       {error && (
@@ -202,8 +214,14 @@ export default function SearchPage() {
       {/* Movies List */}
       {!loading && filteredMovies.length > 0 && (
         <div className="space-y-4 max-w-4xl mx-auto">
-          {filteredMovies.map((movie) => (
-            <Card key={movie.movieId} className="hover:shadow-md transition-shadow">
+          {filteredMovies.map((movie, index) => (
+            <motion.div
+              key={movie.movieId}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.05 }}
+            >
+            <Card className="hover:shadow-md transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-start space-x-4">
                   <Film className="h-6 w-6 mt-1 flex-shrink-0 text-muted-foreground" />
@@ -229,6 +247,7 @@ export default function SearchPage() {
                 </div>
               </CardContent>
             </Card>
+            </motion.div>
           ))}
         </div>
       )}

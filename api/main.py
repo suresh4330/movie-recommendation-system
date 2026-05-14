@@ -1,46 +1,44 @@
 """
-FastAPI Backend for Movie Recommendation System
+FastAPI backend for the movie recommendation system.
 
-This is the main application file that defines all API endpoints
-for the movie recommendation system.
+This module defines the application lifecycle, startup model loading,
+deployment-safe CORS behavior, and all API endpoints.
 """
 
-import pickle
-import pandas as pd
+import __main__
 import os
+import pickle
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Query, Path as PathParam
+
+import pandas as pd
+from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
-# Import ML model classes BEFORE loading pickled models
-from ml_models import HybridRecommender
-import sys
-
-# FIX: The HybridRecommender model was pickled in a script where it was defined in __main__.
-# When loading via uvicorn, __main__ is uvicorn.__main__, so we need to inject the class there.
-import __main__
-setattr(__main__, "HybridRecommender", HybridRecommender)
-
-from models import (
-    Movie,
-    MovieRecommendation,
-    UserRating,
-    RatingInput,
-    APIInfo
-)
+from ml_models import HybridRecommender, build_content_similarity_matrix
+from models import APIInfo, Movie, MovieRecommendation, RatingInput, UserRating
 from recommender import (
     get_recommendations_with_algorithm,
     get_similar_movies,
-    get_user_ratings
+    get_user_ratings,
 )
 
+# The hybrid recommender was pickled from a __main__ module in training scripts.
+# When running with uvicorn, we need the class to exist on __main__ for unpickling.
+setattr(__main__, "HybridRecommender", HybridRecommender)
 
-# Global variables for models and data
+
 models = {}
 ratings = None
 movies = None
+
+ALGORITHM_MODEL_KEYS = {
+    "svd": "svd",
+    "hybrid": "hybrid",
+    "user-knn": "knn_user",
+    "item-knn": "knn_item",
+}
 
 
 def get_allowed_origins() -> List[str]:
@@ -72,131 +70,115 @@ def get_allowed_origins() -> List[str]:
     ]
 
 
+def get_available_algorithms() -> List[str]:
+    """Return the algorithms that are currently loaded and usable."""
+    return [
+        algorithm
+        for algorithm, model_key in ALGORITHM_MODEL_KEYS.items()
+        if model_key in models
+    ]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan context manager for loading models and data on startup
-    and cleaning up on shutdown
+    Load data and recover any deployable fallback models on startup.
     """
+    del app
     global models, ratings, movies
 
     base_path = Path(__file__).resolve().parent.parent
+    models.clear()
+    ratings = None
+    movies = None
 
     try:
-        print("🔄 Loading ML models and data...")
+        print("Loading ML models and data...")
 
-        # Load SVD model (requires scikit-surprise)
+        ratings = pd.read_csv(base_path / "data" / "processed" / "ratings_clean.csv")
+        print(f"  Loaded {len(ratings)} ratings")
+
+        movies = pd.read_csv(base_path / "data" / "processed" / "movies_clean.csv")
+        print(f"  Loaded {len(movies)} movies")
+
         try:
-            with open(base_path / 'models' / 'svd_model.pkl', 'rb') as f:
-                models['svd'] = pickle.load(f)
-            print("  ✓ SVD model loaded")
-        except Exception as e:
-            print(f"  ⚠️ SVD model skipped: {str(e)}")
-            print("  🔄 Falling back to Scikit-Learn SVD implementation...")
+            with open(base_path / "models" / "svd_model.pkl", "rb") as file_handle:
+                models["svd"] = pickle.load(file_handle)
+            print("  Loaded SVD model")
+        except Exception as exc:
+            print(f"  SVD model unavailable: {exc}")
+            print("  Falling back to Scikit-Learn SVD...")
             try:
-                # Import replacement model
                 from ml_models import ScikitLearnSVD
-                svd_model = ScikitLearnSVD(n_components=20)
-                
-                # We need ratings df to train
-                if ratings is None:
-                     ratings = pd.read_csv(base_path / 'data' / 'processed' / 'ratings_clean.csv')
-                
-                svd_model.fit(ratings)
-                models['svd'] = svd_model
-                print("  ✓ Scikit-Learn SVD model trained and loaded")
-            except Exception as e2:
-                print(f"  ❌ Fallback SVD failed: {str(e2)}")
 
-        # Load Hybrid recommender (requires SVD)
+                svd_model = ScikitLearnSVD(n_components=20)
+                svd_model.fit(ratings)
+                models["svd"] = svd_model
+                print("  Built Scikit-Learn SVD fallback")
+            except Exception as fallback_exc:
+                print(f"  SVD fallback failed: {fallback_exc}")
+
         try:
-            with open(base_path / 'models' / 'hybrid_recommender.pkl', 'rb') as f:
-                models['hybrid'] = pickle.load(f)
-            print("  ✓ Hybrid recommender loaded")
-        except Exception as e:
-            print(f"  ⚠️ Hybrid recommender skipped: {str(e)}")
-            
-            # If we have SVD replacement, we can re-create Hybrid
-            if 'svd' in models:
+            with open(base_path / "models" / "hybrid_recommender.pkl", "rb") as file_handle:
+                models["hybrid"] = pickle.load(file_handle)
+            print("  Loaded hybrid recommender")
+        except Exception as exc:
+            print(f"  Hybrid recommender unavailable: {exc}")
+            if "svd" in models:
                 try:
-                    print("  🔄 Re-initializing Hybrid Recommender with replacement SVD...")
-                    
-                    # Need content similarity matrix
-                   
-                    # Check if 'content_similarity_matrix.npy' exists
-                    sim_path = base_path / 'models' / 'content_similarity_matrix.npy'
+                    sim_path = base_path / "models" / "content_similarity_matrix.npy"
                     if sim_path.exists():
                         import numpy as np
-                        content_sim = np.load(sim_path)
+
+                        content_similarity = np.load(sim_path)
+                        print("  Loaded precomputed content similarity matrix")
                     else:
-                         # Fallback if matrix not found (less likely)
-                         print("  ⚠️ Content similarity matrix not found, cannot init Hybrid")
-                         raise FileNotFoundError("Sim matrix missing")
+                        content_similarity = build_content_similarity_matrix(movies)
+                        print("  Rebuilt content similarity matrix from movie genres")
 
-                    # We need movies df
-                    if movies is None:
-                        movies = pd.read_csv(base_path / 'data' / 'processed' / 'movies_clean.csv')
-
-                    # Re-init hybrid
-                    # HybridRecommender is already imported
-                    from ml_models import HybridRecommender
-                    
-                    hybrid_model = HybridRecommender(
-                        cf_model=models['svd'],
-                        content_sim_matrix=content_sim,
-                        movies_df=movies
+                    models["hybrid"] = HybridRecommender(
+                        cf_model=models["svd"],
+                        content_sim_matrix=content_similarity,
+                        movies_df=movies,
                     )
-                    models['hybrid'] = hybrid_model
-                    print("  ✓ Hybrid Recommender re-initialized successfully")
-                except Exception as e2:
-                    print(f"  ❌ Fallback Hybrid init failed: {str(e2)}")
+                    print("  Built hybrid recommender fallback")
+                except Exception as fallback_exc:
+                    print(f"  Hybrid fallback failed: {fallback_exc}")
 
-
-        # Load KNN User model
         try:
-            with open(base_path / 'models' / 'knn_user_model.pkl', 'rb') as f:
-                models['knn_user'] = pickle.load(f)
-            print("  ✓ User-based KNN model loaded")
-        except Exception as e:
-            print(f"  ⚠️ User-based KNN model skipped: {str(e)}")
+            with open(base_path / "models" / "knn_user_model.pkl", "rb") as file_handle:
+                models["knn_user"] = pickle.load(file_handle)
+            print("  Loaded user-based KNN model")
+        except Exception as exc:
+            print(f"  User-based KNN unavailable: {exc}")
 
-        # Load KNN Item model
         try:
-            with open(base_path / 'models' / 'knn_item_model.pkl', 'rb') as f:
-                models['knn_item'] = pickle.load(f)
-            print("  ✓ Item-based KNN model loaded")
-        except Exception as e:
-            print(f"  ⚠️ Item-based KNN model skipped: {str(e)}")
+            with open(base_path / "models" / "knn_item_model.pkl", "rb") as file_handle:
+                models["knn_item"] = pickle.load(file_handle)
+            print("  Loaded item-based KNN model")
+        except Exception as exc:
+            print(f"  Item-based KNN unavailable: {exc}")
 
-        # Load data
-        ratings = pd.read_csv(base_path / 'data' / 'processed' / 'ratings_clean.csv')
-        print(f"  ✓ Loaded {len(ratings)} ratings")
+        print("Data loading complete")
+        print(f"Available algorithms: {', '.join(get_available_algorithms()) or 'none'}")
 
-        movies = pd.read_csv(base_path / 'data' / 'processed' / 'movies_clean.csv')
-        print(f"  ✓ Loaded {len(movies)} movies")
-
-        print("✅ Data loading complete!")
-
-    except Exception as e:
-        print(f"❌ Error loading data: {str(e)}")
+    except Exception as exc:
+        print(f"Error loading data: {exc}")
         raise
 
     yield
 
-    # Cleanup (if needed)
-    print("👋 Shutting down API...")
+    print("Shutting down API...")
 
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Movie Recommendation API",
     description="A powerful API for personalized movie recommendations using multiple ML algorithms",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
@@ -206,24 +188,18 @@ app.add_middleware(
 )
 
 
-# ============================================================================
-# API ENDPOINTS
-# ============================================================================
-
 @app.get("/", response_model=APIInfo)
 async def root():
     """
-    Get API information and status
-
-    Returns basic information about the API including version,
-    status, and whether models are loaded.
+    Get API information and startup status.
     """
     return APIInfo(
         name="Movie Recommendation API",
         version="1.0.0",
         status="online",
-        models_loaded=len(models) == 4 and ratings is not None and movies is not None,
-        description="Personalized movie recommendations using SVD, KNN, and Hybrid algorithms"
+        models_loaded=bool(get_available_algorithms()) and ratings is not None and movies is not None,
+        available_algorithms=get_available_algorithms(),
+        description="Personalized movie recommendations using SVD, KNN, and Hybrid algorithms",
     )
 
 
@@ -234,297 +210,240 @@ async def get_recommendations(
     algorithm: str = Query(
         "svd",
         pattern="^(svd|hybrid|user-knn|item-knn)$",
-        description="Algorithm to use for recommendations"
-    )
+        description="Algorithm to use for recommendations",
+    ),
 ):
     """
-    Get personalized movie recommendations for a user
-
-    Returns a list of recommended movies with predicted ratings based on
-    the specified algorithm.
-
-    **Algorithms:**
-    - `svd`: Singular Value Decomposition (matrix factorization)
-    - `hybrid`: Combination of collaborative and content-based filtering
-    - `user-knn`: User-based K-Nearest Neighbors
-    - `item-knn`: Item-based K-Nearest Neighbors
-
-    **Example:**
-    ```
-    GET /recommendations/1?n=20&algorithm=svd
-    ```
+    Get personalized movie recommendations for a user.
     """
     try:
-        # Check if user exists
-        if user_id not in ratings['userId'].values:
+        available_algorithms = get_available_algorithms()
+        if algorithm not in available_algorithms:
             raise HTTPException(
-                status_code=404,
-                detail=f"User ID {user_id} not found. Please provide a valid user ID."
+                status_code=503,
+                detail=(
+                    f"Algorithm '{algorithm}' is not available in this deployment. "
+                    f"Available algorithms: {', '.join(available_algorithms) or 'none'}."
+                ),
             )
 
-        # Generate recommendations
-        recommendations = get_recommendations_with_algorithm(
+        if ratings is None or movies is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Recommendation data is still loading. Please try again in a moment.",
+            )
+
+        if user_id not in ratings["userId"].values:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User ID {user_id} not found. Please provide a valid user ID.",
+            )
+
+        return get_recommendations_with_algorithm(
             user_id=user_id,
             algorithm=algorithm,
             n=n,
             ratings_df=ratings,
             movies_df=movies,
-            models=models
+            models=models,
         )
-
-        return recommendations
 
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Algorithm assets are unavailable for this deployment: {exc}",
+        )
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error generating recommendations: {str(e)}"
+            detail=f"Error generating recommendations: {exc}",
         )
 
 
 @app.get("/movies/", response_model=List[Movie])
 async def get_movies(
     limit: int = Query(50, ge=1, le=100, description="Maximum number of movies to return"),
-    genre: Optional[str] = Query(None, description="Filter by genre (e.g., 'Action', 'Drama')")
+    genre: Optional[str] = Query(None, description="Filter by genre (e.g., 'Action', 'Drama')"),
 ):
     """
-    Get a list of movies from the catalog
-
-    Returns movies with optional genre filtering. Results are limited
-    to prevent large responses.
-
-    **Example:**
-    ```
-    GET /movies/?limit=20&genre=Action
-    ```
+    Get a list of movies from the catalog.
     """
     try:
         filtered_movies = movies.copy()
 
-        # Apply genre filter if provided
         if genre:
             filtered_movies = filtered_movies[
-                filtered_movies['genres'].str.contains(genre, case=False, na=False)
+                filtered_movies["genres"].str.contains(genre, case=False, na=False)
             ]
 
             if len(filtered_movies) == 0:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"No movies found with genre: {genre}"
+                    detail=f"No movies found with genre: {genre}",
                 )
 
-        # Limit results
         filtered_movies = filtered_movies.head(limit)
 
-        # Convert to response format
         movies_list = []
         for _, row in filtered_movies.iterrows():
-            movies_list.append({
-                'movieId': int(row['movieId']),
-                'title': row['title'],
-                'genres': row['genres']
-            })
+            movies_list.append(
+                {
+                    "movieId": int(row["movieId"]),
+                    "title": row["title"],
+                    "genres": row["genres"],
+                }
+            )
 
         return movies_list
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving movies: {str(e)}"
+            detail=f"Error retrieving movies: {exc}",
         )
 
 
 @app.get("/movies/{movie_id}", response_model=Movie)
 async def get_movie(
-    movie_id: int = PathParam(..., ge=1, description="Movie ID to retrieve")
+    movie_id: int = PathParam(..., ge=1, description="Movie ID to retrieve"),
 ):
     """
-    Get details for a specific movie
-
-    Returns complete information about a single movie including
-    title and genres.
-
-    **Example:**
-    ```
-    GET /movies/1
-    ```
+    Get details for a specific movie.
     """
     try:
-        movie = movies[movies['movieId'] == movie_id]
+        movie = movies[movies["movieId"] == movie_id]
 
         if len(movie) == 0:
             raise HTTPException(
                 status_code=404,
-                detail=f"Movie ID {movie_id} not found"
+                detail=f"Movie ID {movie_id} not found",
             )
 
         movie_data = movie.iloc[0]
 
         return Movie(
-            movieId=int(movie_data['movieId']),
-            title=movie_data['title'],
-            genres=movie_data['genres']
+            movieId=int(movie_data["movieId"]),
+            title=movie_data["title"],
+            genres=movie_data["genres"],
         )
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving movie: {str(e)}"
+            detail=f"Error retrieving movie: {exc}",
         )
 
 
 @app.get("/similar/{movie_id}", response_model=List[dict])
 async def get_similar(
     movie_id: int = PathParam(..., ge=1, description="Movie ID to find similar movies for"),
-    n: int = Query(10, ge=1, le=50, description="Number of similar movies to return")
+    n: int = Query(10, ge=1, le=50, description="Number of similar movies to return"),
 ):
     """
-    Get movies similar to a given movie
-
-    Uses content-based filtering (genre similarity) to find
-    movies that are similar to the specified movie.
-
-    **Example:**
-    ```
-    GET /similar/1?n=10
-    ```
+    Get movies similar to a given movie.
     """
     try:
-        similar_movies_list = get_similar_movies(
+        return get_similar_movies(
             movie_id=movie_id,
             n=n,
-            movies_df=movies
+            movies_df=movies,
         )
 
-        return similar_movies_list
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error finding similar movies: {str(e)}"
+            detail=f"Error finding similar movies: {exc}",
         )
 
 
 @app.get("/user/{user_id}/ratings", response_model=List[UserRating])
 async def get_user_ratings_endpoint(
-    user_id: int = PathParam(..., ge=1, description="User ID to get ratings for")
+    user_id: int = PathParam(..., ge=1, description="User ID to get ratings for"),
 ):
     """
-    Get all ratings for a specific user
-
-    Returns the complete rating history for a user, including
-    movie details and timestamps.
-
-    **Example:**
-    ```
-    GET /user/1/ratings
-    ```
+    Get all ratings for a specific user.
     """
     try:
-        user_ratings_list = get_user_ratings(
+        return get_user_ratings(
             user_id=user_id,
             ratings_df=ratings,
-            movies_df=movies
+            movies_df=movies,
         )
 
-        return user_ratings_list
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving user ratings: {str(e)}"
+            detail=f"Error retrieving user ratings: {exc}",
         )
 
 
 @app.post("/ratings", response_model=dict)
 async def create_rating(rating_input: RatingInput):
     """
-    Submit a new movie rating
-
-    Accepts a new rating from a user. Note: This endpoint currently
-    only validates and returns success. In a production system, this
-    would store the rating and potentially trigger model retraining.
-
-    **Request Body:**
-    ```json
-    {
-        "userId": 1,
-        "movieId": 318,
-        "rating": 4.5
-    }
-    ```
+    Submit a new movie rating.
     """
     try:
-        # Validate that the movie exists
-        if rating_input.movieId not in movies['movieId'].values:
+        if rating_input.movieId not in movies["movieId"].values:
             raise HTTPException(
                 status_code=404,
-                detail=f"Movie ID {rating_input.movieId} not found"
+                detail=f"Movie ID {rating_input.movieId} not found",
             )
 
-        # In a real application, you would:
-        # 1. Store the rating in the database
-        # 2. Update the ratings dataframe
-        # 3. Optionally trigger model retraining
-
-        movie_title = movies[movies['movieId'] == rating_input.movieId].iloc[0]['title']
+        movie_title = movies[movies["movieId"] == rating_input.movieId].iloc[0]["title"]
 
         return {
             "success": True,
             "message": f"Rating submitted successfully for '{movie_title}'",
             "userId": rating_input.userId,
             "movieId": rating_input.movieId,
-            "rating": rating_input.rating
+            "rating": rating_input.rating,
         }
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error submitting rating: {str(e)}"
+            detail=f"Error submitting rating: {exc}",
         )
 
-
-# ============================================================================
-# Health Check Endpoints
-# ============================================================================
 
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint for monitoring
-
-    Returns the health status of the API and all loaded components.
+    Health check endpoint for monitoring.
     """
     return {
         "status": "healthy",
+        "available_algorithms": get_available_algorithms(),
         "models": {
             "svd": "svd" in models,
             "hybrid": "hybrid" in models,
             "knn_user": "knn_user" in models,
-            "knn_item": "knn_item" in models
+            "knn_item": "knn_item" in models,
         },
         "data": {
             "ratings_loaded": ratings is not None,
             "movies_loaded": movies is not None,
             "num_ratings": len(ratings) if ratings is not None else 0,
-            "num_movies": len(movies) if movies is not None else 0
-        }
+            "num_movies": len(movies) if movies is not None else 0,
+        },
     }
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

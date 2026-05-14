@@ -24,6 +24,7 @@ export interface APIInfo {
   version: string
   status: string
   models_loaded: boolean
+  available_algorithms: Algorithm[]
   description: string
 }
 
@@ -33,4 +34,21 @@ export interface RecommendationParams {
   userId: number
   algorithm: Algorithm
   n: number
+}
+
+export interface APIHealth {
+  status: string
+  available_algorithms: Algorithm[]
+  models: {
+    svd: boolean
+    hybrid: boolean
+    knn_user: boolean
+    knn_item: boolean
+  }
+  data: {
+    ratings_loaded: boolean
+    movies_loaded: boolean
+    num_ratings: number
+    num_movies: number
+  }
 }

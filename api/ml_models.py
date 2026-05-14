@@ -11,6 +11,8 @@ from typing import List, Dict, Any
 
 
 from sklearn.decomposition import TruncatedSVD
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 class ScikitLearnSVD:
     """
@@ -99,6 +101,36 @@ class ScikitLearnSVD:
         pred = max(0.5, min(5.0, pred))
         
         return Prediction(pred)
+
+
+class ScikitLearnKNN:
+    """Mock KNN implementation for fallback."""
+    def __init__(self, user_based=True):
+        self.user_based = user_based
+        self.global_mean = 3.5
+        
+    def fit(self, ratings_df):
+        self.global_mean = ratings_df['rating'].mean()
+        return self
+        
+    def predict(self, user_id, movie_id):
+        class Prediction:
+            def __init__(self, est):
+                self.est = est
+        return Prediction(self.global_mean)
+
+
+def build_content_similarity_matrix(movies_df: pd.DataFrame) -> np.ndarray:
+    """
+    Build a genre-based cosine similarity matrix for fallback content features.
+
+    This allows the API to recreate the hybrid recommender during deployment
+    even when the precomputed similarity artifact is not present.
+    """
+    genre_series = movies_df["genres"].fillna("")
+    vectorizer = CountVectorizer(token_pattern=r"[^|]+")
+    genre_matrix = vectorizer.fit_transform(genre_series)
+    return cosine_similarity(genre_matrix, genre_matrix)
 
 
 def get_cf_score(model, user_id: int, movie_id: int) -> float:

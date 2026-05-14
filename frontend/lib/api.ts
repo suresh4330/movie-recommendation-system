@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Movie, Recommendation, UserRating, SimilarMovie, APIInfo } from '@/types'
+import type { Movie, Recommendation, UserRating, SimilarMovie, APIInfo, APIHealth } from '@/types'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -84,7 +84,7 @@ export const movieAPI = {
   /**
    * Get API health status
    */
-  getHealth: async (): Promise<any> => {
+  getHealth: async (): Promise<APIHealth> => {
     const response = await api.get('/health')
     return response.data
   },
