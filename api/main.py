@@ -145,6 +145,16 @@ async def lifespan(app: FastAPI):
             print("  Loaded user-based KNN model")
         except Exception as exc:
             print(f"  User-based KNN unavailable: {exc}")
+            print("  Falling back to Scikit-Learn user-based KNN...")
+            try:
+                from ml_models import ScikitLearnKNN
+
+                knn_user_model = ScikitLearnKNN(user_based=True)
+                knn_user_model.fit(ratings)
+                models["knn_user"] = knn_user_model
+                print("  Built user-based KNN fallback")
+            except Exception as fallback_exc:
+                print(f"  User-based KNN fallback failed: {fallback_exc}")
 
         try:
             with open(base_path / "models" / "knn_item_model.pkl", "rb") as file_handle:
@@ -152,6 +162,16 @@ async def lifespan(app: FastAPI):
             print("  Loaded item-based KNN model")
         except Exception as exc:
             print(f"  Item-based KNN unavailable: {exc}")
+            print("  Falling back to Scikit-Learn item-based KNN...")
+            try:
+                from ml_models import ScikitLearnKNN
+
+                knn_item_model = ScikitLearnKNN(user_based=False)
+                knn_item_model.fit(ratings)
+                models["knn_item"] = knn_item_model
+                print("  Built item-based KNN fallback")
+            except Exception as fallback_exc:
+                print(f"  Item-based KNN fallback failed: {fallback_exc}")
 
         print("Data loading complete")
         print(f"Available algorithms: {', '.join(get_available_algorithms()) or 'none'}")
