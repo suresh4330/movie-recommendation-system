@@ -2,8 +2,8 @@
 import { motion } from 'framer-motion'
 
 import { useState, useEffect } from 'react'
-import { Search as SearchIcon, Film, Loader2, AlertCircle } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../components/ui/card'
+import { Search as SearchIcon, Film, AlertCircle } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card'
 import { Input } from '../../components/ui/input'
 import { Button } from '../../components/ui/button'
 import {
@@ -57,32 +57,26 @@ export default function SearchPage() {
   const [modalOpen, setModalOpen] = useState(false)
 
   useEffect(() => {
+    const loadMovies = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const genre = selectedGenre === 'All Genres' ? undefined : selectedGenre
+        const data = await movieAPI.getMovies(limit, genre)
+        setMovies(data)
+      } catch (err: any) {
+        setError(err.response?.data?.detail || 'Failed to load movies')
+        setMovies([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
     loadMovies()
   }, [selectedGenre, limit])
 
   useEffect(() => {
-    filterMovies()
-  }, [searchQuery, movies])
-
-  const loadMovies = async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const genre = selectedGenre === 'All Genres' ? undefined : selectedGenre
-      const data = await movieAPI.getMovies(limit, genre)
-      setMovies(data)
-      setFilteredMovies(data)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load movies')
-      setMovies([])
-      setFilteredMovies([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const filterMovies = () => {
     if (!searchQuery.trim()) {
       setFilteredMovies(movies)
       return
@@ -93,7 +87,7 @@ export default function SearchPage() {
       movie.title.toLowerCase().includes(query)
     )
     setFilteredMovies(filtered)
-  }
+  }, [searchQuery, movies])
 
   const handleViewDetails = (movieId: number) => {
     setSelectedMovieId(movieId)
@@ -197,7 +191,7 @@ export default function SearchPage() {
       {!loading && filteredMovies.length > 0 && (
         <div className="mb-6 text-center">
           <p className="text-lg font-semibold">
-            📊 {filteredMovies.length} {filteredMovies.length === 1 ? 'Movie' : 'Movies'} Found
+            {filteredMovies.length} {filteredMovies.length === 1 ? 'Movie' : 'Movies'} Found
           </p>
         </div>
       )}

@@ -31,34 +31,46 @@ export default function MovieDetailsModal({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (movieId && isOpen) {
-      fetchMovieDetails()
+    if (!movieId || !isOpen) {
+      return
+    }
+
+    let isActive = true
+
+    const fetchMovieDetails = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const [movieData, similarData] = await Promise.all([
+          movieAPI.getMovie(movieId),
+          movieAPI.getSimilarMovies(movieId, 5),
+        ])
+
+        if (isActive) {
+          setMovie(movieData)
+          setSimilarMovies(similarData)
+        }
+      } catch (err: any) {
+        if (isActive) {
+          setError(err.response?.data?.detail || 'Failed to load movie details')
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchMovieDetails()
+
+    return () => {
+      isActive = false
     }
   }, [movieId, isOpen])
 
-  const fetchMovieDetails = async () => {
-    if (!movieId) return
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const [movieData, similarData] = await Promise.all([
-        movieAPI.getMovie(movieId),
-        movieAPI.getSimilarMovies(movieId, 5),
-      ])
-
-      setMovie(movieData)
-      setSimilarMovies(similarData)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load movie details')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-black/50 backdrop-blur-xl border-white/10 text-white">
         {loading && (
           <div className="flex items-center justify-center py-8">

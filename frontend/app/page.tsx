@@ -195,7 +195,7 @@ export default function HomePage() {
         >
           <div className="mb-6 text-center">
             <h2 className="text-2xl font-bold">
-              🎯 Top {recommendations.length} Recommendations for You
+              Top {recommendations.length} Recommendations for You
             </h2>
             <p className="text-muted-foreground">
               Using {ALGORITHMS.find((a) => a.value === algorithm)?.label}
