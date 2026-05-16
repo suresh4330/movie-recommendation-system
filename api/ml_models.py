@@ -120,109 +120,67 @@ class ScikitLearnKNN:
         return Prediction(self.global_mean)
 
 
-def build_content_similarity_matrix(movies_df: pd.DataFrame) -> np.ndarray:
+def build_genre_matrix(movies_df: pd.DataFrame):
     """
-    Build a genre-based cosine similarity matrix for fallback content features.
-
-    This allows the API to recreate the hybrid recommender during deployment
-    even when the precomputed similarity artifact is not present.
+    Build a sparse genre matrix to save memory.
     """
+    from sklearn.feature_extraction.text import CountVectorizer
     genre_series = movies_df["genres"].fillna("")
     vectorizer = CountVectorizer(token_pattern=r"[^|]+")
-    genre_matrix = vectorizer.fit_transform(genre_series)
-    return cosine_similarity(genre_matrix, genre_matrix)
+    return vectorizer.fit_transform(genre_series)
 
 
 def get_cf_score(model, user_id: int, movie_id: int) -> float:
     """
     Get collaborative filtering prediction score
-
-    Args:
-        model: Trained collaborative filtering model
-        user_id: User ID
-        movie_id: Movie ID
-
-    Returns:
-        Predicted rating
     """
     prediction = model.predict(user_id, movie_id)
     return prediction.est
 
 
-def get_content_score(
-    movie_id: int,
-    user_top_movies: List[int],
-    cosine_sim: np.ndarray,
-    movies: pd.DataFrame
+def get_content_score_optimized(
+    movie_idx: int,
+    user_top_indices: List[int],
+    genre_matrix
 ) -> float:
     """
-    Get content-based similarity score
-
-    Args:
-        movie_id: Target movie ID
-        user_top_movies: List of user's top-rated movie IDs
-        cosine_sim: Content similarity matrix
-        movies: Movies dataframe
-
-    Returns:
-        Average similarity score
+    Calculate content score on-the-fly using sparse matrix multiplication.
+    This uses almost NO memory compared to the 750MB matrix.
     """
-    try:
-        # Get index of the movie
-        movie_idx = movies[movies['movieId'] == movie_id].index[0]
-
-        # Calculate average similarity to user's top movies
-        similarities = []
-        for top_movie_id in user_top_movies:
-            top_idx = movies[movies['movieId'] == top_movie_id].index[0]
-            similarities.append(cosine_sim[movie_idx][top_idx])
-
-        return np.mean(similarities) if similarities else 0
-    except:
-        return 0
+    if not user_top_indices:
+        return 0.0
+    
+    from sklearn.metrics.pairwise import cosine_similarity
+    
+    # Calculate similarity between the target movie and the user's top movies
+    target_vec = genre_matrix[movie_idx]
+    top_vecs = genre_matrix[user_top_indices]
+    
+    sims = cosine_similarity(target_vec, top_vecs).flatten()
+    return np.mean(sims)
 
 
 class HybridRecommender:
     """
-    Hybrid Recommender combining Collaborative Filtering and Content-Based filtering
-
-    This class implements a weighted hybrid approach that combines:
-    - Collaborative Filtering (CF): Predictions based on user-item interactions
-    - Content-Based (CB): Similarity based on movie features (genres)
-
-    The hybrid score is calculated as: (cf_weight * cf_score) + (cb_weight * cb_score)
+    Hybrid Recommender optimized for low-memory (Render Free Tier).
     """
 
     def __init__(
         self,
         cf_model,
-        content_sim_matrix: np.ndarray,
+        genre_matrix,
         movies_df: pd.DataFrame,
         cf_weight: float = 0.6,
         cb_weight: float = 0.4
     ):
-        """
-        Initialize hybrid recommender
-
-        Parameters:
-            cf_model: Trained collaborative filtering model (e.g., SVD)
-            content_sim_matrix: Content similarity matrix (cosine similarity of movie features)
-            movies_df: Movies dataframe with columns: movieId, title, genres
-            cf_weight: Weight for collaborative filtering component (default 0.6)
-            cb_weight: Weight for content-based component (default 0.4)
-
-        Raises:
-            ValueError: If weights don't sum to 1.0
-        """
         self.cf_model = cf_model
-        self.content_sim = content_sim_matrix
+        self.genre_matrix = genre_matrix
         self.movies = movies_df
         self.cf_weight = cf_weight
         self.cb_weight = cb_weight
-
-        # Validate weights
-        if abs(cf_weight + cb_weight - 1.0) > 0.001:
-            raise ValueError("Weights must sum to 1.0")
+        
+        # Create a mapping from movie ID to dataframe index for fast lookup
+        self.id_to_idx = {id: i for i, id in enumerate(self.movies['movieId'])}
 
     def get_recommendations(
         self,
@@ -231,72 +189,44 @@ class HybridRecommender:
         n: int = 10,
         min_cf_score: float = 2.5
     ) -> List[Dict[str, Any]]:
-        """
-        Get hybrid recommendations for a user
-
-        This method:
-        1. Identifies user's top-rated movies (rating >= 4.0)
-        2. Finds movies the user hasn't rated
-        3. Calculates hybrid scores combining CF and CB approaches
-        4. Returns top N movies ranked by hybrid score
-
-        Parameters:
-            user_id: User ID to generate recommendations for
-            ratings_df: Ratings dataframe with columns: userId, movieId, rating
-            n: Number of recommendations to return (default 10)
-            min_cf_score: Minimum CF score threshold for filtering (default 2.5)
-
-        Returns:
-            List of dictionaries containing:
-                - movieId: Movie ID
-                - title: Movie title
-                - genres: Movie genres
-                - predicted_rating: Final hybrid score (for API compatibility)
-                (Optional internal fields: cf_score, cb_score, hybrid_score)
-        """
-        # Get user's top-rated movies for content-based component
+        # Get user's top-rated movies
         user_ratings = ratings_df[ratings_df['userId'] == user_id]
         top_rated = user_ratings[user_ratings['rating'] >= 4.0].nlargest(5, 'rating')
-        user_top_movies = top_rated['movieId'].values
+        user_top_ids = top_rated['movieId'].values
+        user_top_indices = [self.id_to_idx[mid] for mid in user_top_ids if mid in self.id_to_idx]
 
         # Get movies user hasn't rated
-        all_movie_ids = self.movies['movieId'].unique()
-        rated_movies = user_ratings['movieId'].values
+        all_movie_ids = self.movies['movieId'].values
+        rated_movies = set(user_ratings['movieId'].values)
         unrated_movies = [mid for mid in all_movie_ids if mid not in rated_movies]
 
         # Calculate hybrid scores
         hybrid_scores = []
 
         for movie_id in unrated_movies:
-            # Collaborative filtering score (normalize to 0-1 range)
             cf_score = get_cf_score(self.cf_model, user_id, movie_id)
-            cf_normalized = (cf_score - 0.5) / (5.0 - 0.5)  # Scale from [0.5, 5] to [0, 1]
+            if cf_score < min_cf_score:
+                continue
+                
+            cf_normalized = (cf_score - 0.5) / (5.0 - 0.5)
 
-            # Content-based score (already in 0-1 range from cosine similarity)
-            cb_score = get_content_score(
-                movie_id,
-                user_top_movies,
-                self.content_sim,
-                self.movies
-            )
+            # Get content score on the fly
+            m_idx = self.id_to_idx.get(movie_id)
+            cb_score = 0.0
+            if m_idx is not None:
+                cb_score = get_content_score_optimized(m_idx, user_top_indices, self.genre_matrix)
 
-            # Hybrid score (weighted combination)
-            hybrid_score = (self.cf_weight * cf_normalized +
-                          self.cb_weight * cb_score)
+            hybrid_score = (self.cf_weight * cf_normalized + self.cb_weight * cb_score)
 
-            # Only include if CF score meets minimum threshold
-            if cf_score >= min_cf_score:
-                hybrid_scores.append({
-                    'movieId': movie_id,
-                    'cf_score': cf_score,
-                    'cb_score': cb_score,
-                    'hybrid_score': hybrid_score
-                })
+            hybrid_scores.append({
+                'movieId': movie_id,
+                'cf_score': cf_score,
+                'hybrid_score': hybrid_score
+            })
 
-        # Sort by hybrid score (descending)
+        # Sort and return
         hybrid_scores.sort(key=lambda x: x['hybrid_score'], reverse=True)
 
-        # Get top N with movie details
         recommendations = []
         for item in hybrid_scores[:n]:
             movie_info = self.movies[self.movies['movieId'] == item['movieId']].iloc[0]
@@ -304,7 +234,7 @@ class HybridRecommender:
                 'movieId': int(item['movieId']),
                 'title': movie_info['title'],
                 'genres': movie_info['genres'],
-                'predicted_rating': float(item['cf_score'])  # Use CF score as predicted rating
+                'predicted_rating': float(item['cf_score'])
             })
 
         return recommendations

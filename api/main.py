@@ -16,7 +16,7 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from ml_models import HybridRecommender, build_content_similarity_matrix
+from ml_models import HybridRecommender
 from models import APIInfo, Movie, MovieRecommendation, RatingInput, UserRating
 from recommender import (
     get_recommendations_with_algorithm,
@@ -123,22 +123,17 @@ async def lifespan(app: FastAPI):
         # deployments (Render, Railway, etc.), so we rebuild it in ~1-2 seconds instead.
         if "svd" in models:
             try:
-                import numpy as np
-
-                sim_path = base_path / "models" / "content_similarity_matrix.npy"
-                if sim_path.exists():
-                    content_similarity = np.load(sim_path)
-                    print("  Loaded precomputed content similarity matrix")
-                else:
-                    content_similarity = build_content_similarity_matrix(movies)
-                    print("  Built content similarity matrix from movie genres")
+                # Use the new memory-efficient genre matrix builder
+                from ml_models import build_genre_matrix
+                genre_matrix = build_genre_matrix(movies)
+                print("  Built sparse genre matrix (memory optimized)")
 
                 models["hybrid"] = HybridRecommender(
                     cf_model=models["svd"],
-                    content_sim_matrix=content_similarity,
+                    genre_matrix=genre_matrix,
                     movies_df=movies,
                 )
-                print("  Built hybrid recommender (CF + content-based)")
+                print("  Built hybrid recommender (Optimized for Render Free Tier)")
             except Exception as exc:
                 print(f"  Hybrid recommender build failed: {exc}")
         else:
