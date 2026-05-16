@@ -3,23 +3,23 @@ import { motion } from 'framer-motion'
 
 import { useState, useEffect } from 'react'
 import { Search as SearchIcon, Film, Loader2, AlertCircle } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../components/ui/card'
+import { Input } from '../../components/ui/input'
+import { Button } from '../../components/ui/button'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import MovieDetailsModal from '@/components/movie-details-modal'
-import { movieAPI } from '@/lib/api'
-import { formatGenres } from '@/lib/utils'
-import type { Movie } from '@/types'
+} from '../../components/ui/select'
+import { Badge } from '../../components/ui/badge'
+import { Alert, AlertDescription } from '../../components/ui/alert'
+import { Skeleton } from '../../components/ui/skeleton'
+import MovieDetailsModal from '../../components/movie-details-modal'
+import { movieAPI } from '../../lib/api'
+import { formatGenres } from '../../lib/utils'
+import type { Movie } from '../../types'
 
 const GENRES = [
   'All Genres',

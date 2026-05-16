@@ -2,15 +2,15 @@
 
 import { useState } from 'react'
 import { User, BarChart3, Star, Film, Loader2, AlertCircle, Clock } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import { movieAPI } from '@/lib/api'
-import { formatGenres, formatRating, formatTimestamp } from '@/lib/utils'
-import type { UserRating } from '@/types'
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card'
+import { Input } from '../../components/ui/input'
+import { Button } from '../../components/ui/button'
+import { Badge } from '../../components/ui/badge'
+import { Alert, AlertDescription } from '../../components/ui/alert'
+import { Skeleton } from '../../components/ui/skeleton'
+import { movieAPI } from '../../lib/api'
+import { formatGenres, formatRating, formatTimestamp } from '../../lib/utils'
+import type { UserRating } from '../../types'
 
 export default function ProfilePage() {
   const [userId, setUserId] = useState('')
