@@ -3,22 +3,22 @@ import { motion } from 'framer-motion'
 
 import { useState } from 'react'
 import { Sparkles, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
+import { Input } from '../components/ui/input'
+import { Button } from '../components/ui/button'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import MovieCard from '@/components/movie-card'
-import MovieDetailsModal from '@/components/movie-details-modal'
-import { movieAPI } from '@/lib/api'
-import type { Recommendation, Algorithm } from '@/types'
+} from '../components/ui/select'
+import { Alert, AlertDescription } from '../components/ui/alert'
+import { Skeleton } from '../components/ui/skeleton'
+import MovieCard from '../components/movie-card'
+import MovieDetailsModal from '../components/movie-details-modal'
+import { movieAPI } from '../lib/api'
+import type { Recommendation, Algorithm } from '../types'
 
 const ALGORITHMS: { value: Algorithm; label: string }[] = [
   { value: 'svd', label: 'SVD (Matrix Factorization)' },

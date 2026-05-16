@@ -7,12 +7,12 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { movieAPI } from '@/lib/api'
-import { formatGenres } from '@/lib/utils'
-import type { Movie, SimilarMovie } from '@/types'
+} from './ui/dialog'
+import { Badge } from './ui/badge'
+import { Alert, AlertDescription } from './ui/alert'
+import { movieAPI } from '../lib/api'
+import { formatGenres } from '../lib/utils'
+import type { Movie, SimilarMovie } from '../types'
 
 interface MovieDetailsModalProps {
   movieId: number | null
