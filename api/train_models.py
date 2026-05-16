@@ -30,10 +30,9 @@ if __name__ == "__main__":
     with open(os.path.join(models_dir, "knn_item_model.pkl"), "wb") as f:
         pickle.dump(knn_item, f)
         
-    # 4. Hybrid
-    sim_matrix = build_content_similarity_matrix(movies)
-    hybrid = HybridRecommender(cf_model=svd_model, content_sim_matrix=sim_matrix, movies_df=movies)
-    with open(os.path.join(models_dir, "hybrid_recommender.pkl"), "wb") as f:
-        pickle.dump(hybrid, f)
+    # Note: The hybrid recommender is built at API startup from SVD + content similarity.
+    # No need to save it as a pkl (it would be ~762 MB).
+    print("Training complete. SVD and KNN models saved.")
+    print("The hybrid recommender is built automatically when the API starts.")
     
     print("All models trained and saved.")

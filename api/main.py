@@ -118,32 +118,31 @@ async def lifespan(app: FastAPI):
             except Exception as fallback_exc:
                 print(f"  SVD fallback failed: {fallback_exc}")
 
-        try:
-            with open(base_path / "models" / "hybrid_recommender.pkl", "rb") as file_handle:
-                models["hybrid"] = pickle.load(file_handle)
-            print("  Loaded hybrid recommender")
-        except Exception as exc:
-            print(f"  Hybrid recommender unavailable: {exc}")
-            if "svd" in models:
-                try:
-                    sim_path = base_path / "models" / "content_similarity_matrix.npy"
-                    if sim_path.exists():
-                        import numpy as np
+        # Always build the hybrid recommender at startup from SVD + content similarity.
+        # The precomputed hybrid_recommender.pkl (~762 MB) is too large for cloud
+        # deployments (Render, Railway, etc.), so we rebuild it in ~1-2 seconds instead.
+        if "svd" in models:
+            try:
+                import numpy as np
 
-                        content_similarity = np.load(sim_path)
-                        print("  Loaded precomputed content similarity matrix")
-                    else:
-                        content_similarity = build_content_similarity_matrix(movies)
-                        print("  Rebuilt content similarity matrix from movie genres")
+                sim_path = base_path / "models" / "content_similarity_matrix.npy"
+                if sim_path.exists():
+                    content_similarity = np.load(sim_path)
+                    print("  Loaded precomputed content similarity matrix")
+                else:
+                    content_similarity = build_content_similarity_matrix(movies)
+                    print("  Built content similarity matrix from movie genres")
 
-                    models["hybrid"] = HybridRecommender(
-                        cf_model=models["svd"],
-                        content_sim_matrix=content_similarity,
-                        movies_df=movies,
-                    )
-                    print("  Built hybrid recommender fallback")
-                except Exception as fallback_exc:
-                    print(f"  Hybrid fallback failed: {fallback_exc}")
+                models["hybrid"] = HybridRecommender(
+                    cf_model=models["svd"],
+                    content_sim_matrix=content_similarity,
+                    movies_df=movies,
+                )
+                print("  Built hybrid recommender (CF + content-based)")
+            except Exception as exc:
+                print(f"  Hybrid recommender build failed: {exc}")
+        else:
+            print("  Skipping hybrid recommender (SVD not loaded)")
 
         try:
             with open(base_path / "models" / "knn_user_model.pkl", "rb") as file_handle:
